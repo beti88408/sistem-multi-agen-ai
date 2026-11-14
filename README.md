@@ -48,6 +48,7 @@ GROQ_API_KEY = "gsk_xxxxxxxxxxxxxxxx"
 4. Klik **Deploy**. Untuk mengubah key kemudian: App → Settings → Secrets.
 
 ## Format data
+- Dataset bawaan: letakkan file di folder yang sama dengan `app.py` dan sesuaikan `DEFAULT_FILES` di bagian atas `app.py`; file ini dibaca otomatis saat aplikasi dibuka (unggah manual tetap tersedia di sidebar).
 - **Payroll** (wajib): `employee_id, nama, departemen, gaji_pokok, tunjangan, lembur_jam, lembur_rp, bpjs_kesehatan, bpjs_jht, pph21, gaji_bersih, no_rekening`; opsional: `hari_hadir, skor_kinerja, tanggal_masuk`.
 - **Trade** (wajib): `id_transaksi, pemasok, negara_asal, deskripsi_barang, kode_hs, kuantitas, nilai_usd`; opsional: `tanggal, satuan, tarif_bm`.
 - Jika nama kolom berbeda, Agen 1 mencoba memetakannya otomatis (butuh API key).

@@ -191,12 +191,16 @@ class SanitizerAgent:
         rep["baris_kosong_dihapus"] = n0 - len(df)
         for c in df.select_dtypes("object").columns:
             df[c] = df[c].astype(str).str.strip().replace({"nan": np.nan, "": np.nan, "None": np.nan, "NaT": np.nan})
+        if "kode_hs" in df:  # pulihkan nol di depan yang hilang saat CSV/Excel dibaca sebagai angka
+            hs = df["kode_hs"].astype(str).str.replace(r"\.0$", "", regex=True).str.replace(r"\D", "", regex=True)
+            df["kode_hs"] = hs.where((hs.str.len() % 2 == 0) | (hs == ""), "0" + hs).replace("", np.nan)
         for c in NUM[mode]:
             if c in df:
                 df[c] = df[c].map(to_num)
         for c in df.columns:
             if "tanggal" in c or c.startswith("tgl") or "date" in c:
-                df[c] = pd.to_datetime(df[c], dayfirst=True, errors="coerce")
+                p1 = pd.to_datetime(df[c], format="ISO8601", errors="coerce")
+                df[c] = p1.fillna(pd.to_datetime(df[c].where(p1.isna()), dayfirst=True, errors="coerce"))
         n1 = len(df)
         df = df.dropna(subset=CRIT[mode])
         rep["baris_data_kritis_kosong"] = n1 - len(df)

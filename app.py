@@ -1,5 +1,6 @@
 """app.py - Streamlit UI: Integrated Multi-Agent HR, Payroll & Trade Governance Simulation System."""
 from collections import Counter
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,10 @@ from sample_data import generate_payroll, generate_trade
 
 st.set_page_config(page_title="Multi-Agent HR, Payroll & Trade Governance", page_icon="🛡️", layout="wide")
 MODES = {"Tata Kelola SDM & Payroll Simulation": "payroll", "Audit Data Ekspor-Impor & Kepabeanan": "trade"}
+# ====== GANTI NAMA FILE DI BAWAH INI SESUAI DATASET DI REPOSITORY GITHUB ANDA ======
+# File harus berada di folder yang sama dengan app.py (atau tulis path relatif, mis. "data/file.csv").
+DEFAULT_FILES = {"payroll": "data_payroll.csv", "trade": "data_ekspor_impor.csv"}
+BASE_DIR = Path(__file__).parent
 COLORS = {"Tinggi": "#d62728", "Sedang": "#ff7f0e", "Rendah": "#f2c744", "Normal": "#2ca02c"}
 
 
@@ -27,11 +32,32 @@ def secret_key():
         return ""
 
 
+@st.cache_data(show_spinner="Membaca dataset dari repository...")
+def read_table(path: str, mtime: float):
+    """Dibaca sekali lalu di-cache; mtime membuat cache diperbarui bila file di repo berubah."""
+    if path.lower().endswith(".csv"):
+        return pd.read_csv(path, sep=None, engine="python", dtype={"kode_hs": str})
+    return pd.read_excel(path, dtype={"kode_hs": str})
+
+
+def default_df(mode):
+    """Cari dataset bawaan repository (nama utama, lalu varian .xlsx/.csv). Return (df, nama_file) atau (None, None)."""
+    name = Path(DEFAULT_FILES[mode])
+    for cand in (name, name.with_suffix(".xlsx"), name.with_suffix(".csv")):
+        p = BASE_DIR / cand
+        if p.is_file():
+            try:
+                return read_table(str(p), p.stat().st_mtime), cand.name
+            except Exception as e:
+                st.sidebar.error(f"Gagal membaca {cand.name}: {e}")
+    return None, None
+
+
 def load_file(f):
     if f.name.lower().endswith(".csv"):
         f.seek(0)
-        return pd.read_csv(f, sep=None, engine="python")
-    return pd.read_excel(f)
+        return pd.read_csv(f, sep=None, engine="python", dtype={"kode_hs": str})
+    return pd.read_excel(f, dtype={"kode_hs": str})
 
 
 # ------------------------------------------------------------ Sidebar
@@ -45,24 +71,48 @@ with st.sidebar:
     ump = st.number_input("UMP/UMK acuan (Rp)", value=3_500_000, step=50_000) if mode == "payroll" else None
     st.divider()
     up = st.file_uploader("Unggah data (.csv / .xlsx)", type=["csv", "xlsx"])
-    sample_btn = st.button("🧪 Gunakan Data Sampel Bawaan")
+    sample_btn = st.button("🧪 Gunakan Data Sampel Generator")
+    reload_btn = st.button("🔄 Muat Ulang Dataset Repository")
+    autorun_cb = st.checkbox("Jalankan analisis otomatis saat dibuka", value=False,
+                             help="Aktif = langsung memanggil agen (dan Groq bila ada API key) saat data dimuat.")
     run_btn = st.button("🚀 Jalankan Analisis Multi-Agen", type="primary")
 
 ss = st.session_state
 if ss.get("mode") != mode:
-    ss.update(mode=mode, df_raw=None, result=None, chat=[], source="", upload_sig=None)
+    ss.update(mode=mode, df_raw=None, result=None, chat=[], source="", upload_sig=None, auto_done=False)
+
+# 1) Dataset bawaan repository dimuat otomatis saat aplikasi dibuka
+if ss.get("df_raw") is None:
+    _d, _n = default_df(mode)
+    if _d is not None:
+        ss.df_raw, ss.source = _d, f"{_n} (dataset repository)"
+if reload_btn:
+    _d, _n = default_df(mode)
+    if _d is None:
+        st.sidebar.warning(f"File '{DEFAULT_FILES[mode]}' tidak ditemukan di repository.")
+    else:
+        ss.df_raw, ss.source, ss.result, ss.chat, ss.auto_done = _d, f"{_n} (dataset repository)", None, [], False
+# 2) Upload manual menimpa dataset bawaan
 if up is not None and ss.get("upload_sig") != (up.name, up.size):
     try:
-        ss.df_raw, ss.source, ss.upload_sig, ss.result = load_file(up), up.name, (up.name, up.size), None
+        ss.df_raw, ss.source, ss.upload_sig, ss.result, ss.auto_done = load_file(up), up.name, (up.name, up.size), None, False
     except Exception as e:
         st.sidebar.error(f"Gagal membaca file: {e}")
+# 3) Data sampel generator
 if sample_btn:
     ss.df_raw = generate_payroll() if mode == "payroll" else generate_trade()
-    ss.source, ss.result, ss.chat = "Data sampel bawaan", None, []
+    ss.source, ss.result, ss.chat, ss.auto_done = "Data sampel generator", None, [], False
 
-if run_btn:
+if ss.get("df_raw") is None:
+    st.sidebar.caption(f"ℹ️ '{DEFAULT_FILES[mode]}' tidak ditemukan di repository. Unggah file atau pakai data sampel.")
+else:
+    st.sidebar.caption(f"📂 Sumber data aktif: **{ss.source}**")
+
+auto = autorun_cb and ss.get("df_raw") is not None and ss.get("result") is None and not ss.get("auto_done")
+if run_btn or auto:
+    ss.auto_done = True
     if ss.get("df_raw") is None:
-        st.sidebar.warning("Unggah file atau pilih data sampel dulu.")
+        st.sidebar.warning("Belum ada data. Unggah file atau pilih data sampel dulu.")
     else:
         llm = ag.LLM(api_key, model)
         bar = st.progress(0.0, text="Memulai...")
@@ -78,7 +128,7 @@ if run_btn:
 st.title("🛡️ Integrated Multi-Agent HR, Payroll & Trade Governance Simulation System")
 r = ss.get("result")
 if r is None:
-    st.info("Pilih mode, unggah data atau klik **Gunakan Data Sampel Bawaan**, lalu klik **Jalankan Analisis Multi-Agen**.")
+    st.info("Data siap. Klik **🚀 Jalankan Analisis Multi-Agen** di sidebar untuk memulai (upload manual bersifat opsional).")
     if ss.get("df_raw") is not None:
         st.subheader(f"Pratinjau data: {ss.source} ({len(ss.df_raw)} baris)")
         st.dataframe(ss.df_raw.head(50))

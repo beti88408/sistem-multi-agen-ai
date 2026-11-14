@@ -8,6 +8,7 @@ LAST = ["Santoso", "Wijaya", "Pratama", "Hidayat", "Saputra", "Lubis", "Nasution
 
 
 def generate_payroll(n: int = 200, seed: int = 42) -> pd.DataFrame:
+    n = max(n, 60)  # butuh minimal 60 baris untuk menyuntik semua jenis anomali
     rng = np.random.default_rng(seed)
     depts = {"Keuangan": (7e6, 15e6), "SDM": (6e6, 13e6), "Produksi": (4e6, 9e6),
              "Logistik": (4e6, 8e6), "IT": (8e6, 20e6), "Pemasaran": (6e6, 14e6)}
